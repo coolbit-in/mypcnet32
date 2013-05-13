@@ -2,4 +2,7 @@
 *.sublime-workspace
 *.ko
 *.o
+Modules.*
+modules.*
+mypcnet32.mod.*
 .DS_Store
