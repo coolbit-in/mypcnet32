@@ -35,6 +35,7 @@
 static int __init mypcnet32_init_module(void);
 void __exit mypcnet32_cleanup_module(void);
 static int __devinit mypcnet32_probe(struct pci_dev *pdev, const struct pci_device_id *dev_id);
+struct net_device *mypcnet32_net_device;
 /* pci_device_id 数据结构 */
 static struct pci_device_id mypcnet32_pci_tbl[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_LANCE_HOME), },
@@ -44,6 +45,7 @@ static struct pci_device_id mypcnet32_pci_tbl[] = {
 
 	{ }	/* terminate list */
 };
+MODULE_DEVICE_TABLE(pci, pcnet32_pci_tbl);
 
 /* initialization block 数据结构 */
 struct mypcnet32_init_block {
@@ -68,7 +70,7 @@ struct mypcnet32_private {
 	struct mypcnet32_tx_descriptor *tx_ring;
 	struct mypcnet32_rx_descriptor *rx_ring;
 	struct pci_dev *pci_dev;
-	struct net_device *dev;
+//	struct net_device *ndev;
 	struct net_device *next;
 	const char *name;
 	struct sk_buff **tx_skbuff;
@@ -76,7 +78,8 @@ struct mypcnet32_private {
 	dma_addr_t *tx_dma_addr;
 	dma_addr_t *rx_dma_addr;
 	dma_addr_t init_dma_addr;
-
+	int rx_ring_size;
+	int tx_ring_size;
 };
 /* 寄存器读写函数 */
 static unsigned long read_csr(unsigned long base_io_addr, int index)
@@ -109,8 +112,11 @@ static int __init mypcnet32_init_module(void)
 	printk(KERN_INFO "mypcnet32 driver write by coolbit.in@gmail.com\n");
 	printk(KERN_INFO "mypcnet32 init\n");
 	
-	return(pci_register_driver(&mypcnet32_driver));
-	//return 0;		
+	if(!pci_register_driver(&mypcnet32_driver))
+		printk(KERN_INFO "pci_register_driver success\n");
+	else 
+		printk(KERN_INFO "pci_register_driver failed");
+	return 0;		
 }
 static int __devinit mypcnet32_probe(struct pci_dev *pdev, const struct pci_device_id *dev_id)
 {
@@ -139,13 +145,43 @@ static int __devinit mypcnet32_probe(struct pci_dev *pdev, const struct pci_devi
 		ndev->dev_addr[2 * i] = val & 0xff;
 		ndev->dev_addr[2 * i + 1] = (val >> 8) & 0xff;
 	}
+
+	printk(KERN_INFO "MAC ADDRESS: "); //输出mac地址以供检查
+	for (i = 0; i < 6; i++) {
+		printk(KERN_INFO "%x ", ndev->dev_addr[i]);
+	}
+	printk(KERN_INFO "\n");
+
+	ndev->base_addr = base_io_addr; //填充ndev的base_addr
+
+	lp = netdev_priv(ndev);  //获取私有空间
+
+	lp->init_block = pci_alloc_consistent(pdev, sizeof(*lp->init_block), &p->init_dma_addr); //分配Init_block在内存中的空间
+	if (lp->init_block != NULL) 
+		printk("Init_block allocation success\n");
+	else 
+		printk("Init_block allocation failed\n");
+	lp->pci_dev = pdev;
+	lp->tx_ring_size = 16;
+	lp->rx_ring_size = 16;
+	if(!register_netdev(ndev)) //注册net_device数据结构
+		printk(KERN_INFO "register_netdev success\n");
+	else 
+		printk(KERN_INFO "register_netdev failed\n")
+	mypcnet32_net_device = ndev;
+	pci_set_drvdata(pdev, ndev);
 	return 0;																															
 }
 
 void __exit mypcnet32_cleanup_module(void)
 {
+	struct pcnet32_private *lp = netdev_priv(mypcnet32_net_device);
+	unregister_netdev(mypcnet32_net_device);
+	release_region(mypcnet32_net_device->base_addr, 0x20);
+	pci_free_consistent(lp->pci_dev, sizeof(*lp->init_block), lp->init_block, lp->init_dma_addr);
+	free_netdev(mypcnet32_net_device);
+	pci_unregister_driver(&mypcnet32_driver);
 	printk(KERN_INFO "mypcnet32 driver is clean up\n");
-	
 }
 module_init(mypcnet32_init_module);
 module_exit(mypcnet32_cleanup_module);
