@@ -25,11 +25,12 @@
 #include <asm/irq.h>
 
 /* 宏定义 */
-#define DRIVER_NAME mypcnet32
-#define IO_RAP
-#define IO_RDP
-#define IO_BDP
-
+#define DRIVER_NAME	mypcnet32
+#define IO_RAP		0x12
+#define IO_RDP		0x10
+#define IO_BDP		0x16
+#define IO_RESET	0x14
+#define IO_TOTAL_SIZE	0x20
 /* pci_device_id 数据结构 */
 static struct pci_device_id mypcnet32_pci_tbl[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_AMD, PCI_DEVICE_ID_AMD_LANCE_HOME), },
@@ -56,6 +57,24 @@ static struct pci_driver mypcnet32_driver = {
 	.probe = mypcnet32_probe,
 	.id_table = mypcnet32_pci_tbl,
 };
+
+/* 定义私有空间数据结构*/
+struct mypcnet32_private {
+	struct mypcnet32_init_block *init_block;
+	struct mypcnet32_tx_descriptor *tx_ring;
+	struct mypcnet32_rx_descriptor *rx_ring;
+	struct pci_dev *pci_dev;
+	struct net_device *dev;
+	struct net_device *next;
+	const char *name;
+	struct sk_buff **tx_skbuff;
+	struct sk_buff **rx_skbuff;
+	dma_addr_t *tx_dma_addr;
+	dma_addr_t *rx_dma_addr;
+	dma_addr_t init_dma_addr;
+
+}
+/* 寄存器读写函数 */
 static unsigned long read_csr(unsigned long base_io_addr, int index)
 {
 	outl(index, base_io_addr + IO_RAP);
@@ -79,6 +98,7 @@ static void write_bcr(unsigned long base_io_addr, int index, int val)
 	outl(index, base_io_addr + IO_RAP);
 	outl(val, base_io_addr + IO_BDP);
 }
+
 /* 模块初始化函数 */
 static int __init mypcnet32_init_module(void)
 {
@@ -90,7 +110,27 @@ static int __init mypcnet32_init_module(void)
 }
 static int __devinit mypcnet32_probe(struct pci_dev *pdev, const struct pci_device_id *dev_id)
 {
+	unsigned long base_io_addr;
+	if (!pci_enable_device(pdev)) {  //使能设备
+		printk(KERN_INFO "pci enable device success!\n");
+	}
+	pci_set_master(pdev); //设置pci master模式
 
+	base_io_addr = pci_resource_start(pdev, 0); //获取io基地址
+	printk(KERN_INFO "base io address is %d\n", base_io_addr);
+
+	if (request_region(base_io_addr, IO_TOTAL_SIZE, "My pcnet32 driver") == NULL) //注册IO资源
+		printk(KERN_INFO "request region error\n");
+	else 
+		printk(KERN_INFO "request region success\n");
+	ndev = alloc_etherdev(sizeof(*lp));
+	SET_NETDEV_DEV(ndev, &pdev->dev);
+	for (i = 0; i < 3; i++)	{  //填充mac地址
+		unsigned int val;
+		val = read_csr(base_io_addr, i + 12) & 0x0ffff;
+		dev->dev_addr[2 * i] = val & 0xff;
+		dev->dev_addr[2 * i + 1] = (val >> 8) & 0xff;
+	}																															
 }
 
 static void __exit mypcnet32_cleanup_module(void)
