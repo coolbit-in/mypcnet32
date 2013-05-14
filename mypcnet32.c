@@ -45,7 +45,7 @@ static struct pci_device_id mypcnet32_pci_tbl[] = {
 
 	{ }	/* terminate list */
 };
-MODULE_DEVICE_TABLE(pci, pcnet32_pci_tbl);
+//MODULE_DEVICE_TABLE(pci, pcnet32_pci_tbl);
 
 /* initialization block 数据结构 */
 struct mypcnet32_init_block {
@@ -67,16 +67,16 @@ static struct pci_driver mypcnet32_driver = {
 /* 定义私有空间数据结构*/
 struct mypcnet32_private {
 	struct mypcnet32_init_block *init_block;
-	struct mypcnet32_tx_descriptor *tx_ring;
-	struct mypcnet32_rx_descriptor *rx_ring;
+//	struct mypcnet32_tx_descriptor *tx_ring;
+//	struct mypcnet32_rx_descriptor *rx_ring;
 	struct pci_dev *pci_dev;
 //	struct net_device *ndev;
-	struct net_device *next;
-	const char *name;
-	struct sk_buff **tx_skbuff;
-	struct sk_buff **rx_skbuff;
-	dma_addr_t *tx_dma_addr;
-	dma_addr_t *rx_dma_addr;
+//	struct net_device *next;
+//	const char *name;
+//	struct sk_buff **tx_skbuff;
+//	struct sk_buff **rx_skbuff;
+//	dma_addr_t *tx_dma_addr;
+//	dma_addr_t *rx_dma_addr;
 	dma_addr_t init_dma_addr;
 	int rx_ring_size;
 	int tx_ring_size;
@@ -148,7 +148,7 @@ static int __devinit mypcnet32_probe(struct pci_dev *pdev, const struct pci_devi
 
 	printk(KERN_INFO "MAC ADDRESS: "); //输出mac地址以供检查
 	for (i = 0; i < 6; i++) {
-		printk(KERN_INFO "%x ", ndev->dev_addr[i]);
+		printk(KERN_INFO "%x:", ndev->dev_addr[i]);
 	}
 	printk(KERN_INFO "\n");
 
@@ -156,7 +156,7 @@ static int __devinit mypcnet32_probe(struct pci_dev *pdev, const struct pci_devi
 
 	lp = netdev_priv(ndev);  //获取私有空间
 
-	lp->init_block = pci_alloc_consistent(pdev, sizeof(*lp->init_block), &p->init_dma_addr); //分配Init_block在内存中的空间
+	lp->init_block = pci_alloc_consistent(pdev, sizeof(*lp->init_block), &lp->init_dma_addr); //分配Init_block在内存中的空间
 	if (lp->init_block != NULL) 
 		printk("Init_block allocation success\n");
 	else 
@@ -167,7 +167,7 @@ static int __devinit mypcnet32_probe(struct pci_dev *pdev, const struct pci_devi
 	if(!register_netdev(ndev)) //注册net_device数据结构
 		printk(KERN_INFO "register_netdev success\n");
 	else 
-		printk(KERN_INFO "register_netdev failed\n")
+		printk(KERN_INFO "register_netdev failed\n");
 	mypcnet32_net_device = ndev;
 	pci_set_drvdata(pdev, ndev);
 	return 0;																															
@@ -175,10 +175,10 @@ static int __devinit mypcnet32_probe(struct pci_dev *pdev, const struct pci_devi
 
 void __exit mypcnet32_cleanup_module(void)
 {
-	struct pcnet32_private *lp = netdev_priv(mypcnet32_net_device);
+	struct mypcnet32_private *lp = netdev_priv(mypcnet32_net_device);
 	unregister_netdev(mypcnet32_net_device);
 	release_region(mypcnet32_net_device->base_addr, 0x20);
-	pci_free_consistent(lp->pci_dev, sizeof(*lp->init_block), lp->init_block, lp->init_dma_addr);
+	pci_free_consistent(lp->pci_dev, sizeof(*(lp->init_block)), lp->init_block, lp->init_dma_addr);
 	free_netdev(mypcnet32_net_device);
 	pci_unregister_driver(&mypcnet32_driver);
 	printk(KERN_INFO "mypcnet32 driver is clean up\n");

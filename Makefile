@@ -6,4 +6,14 @@ module-objs := mypcnet32.o
 
 all:
 	$(MAKE) -C $(KERNEL_SRC) M=$(PWD) modules
-
+clean:
+	rm -f *.o
+	rm -f *.ko
+	rm -f modules.*
+	rm -f Module.*
+install:
+	rmmod pcnet32
+	insmod ./mypcnet32.ko
+uninstall:
+	rmmod mypcnet32
+	modprobe pcnet32
