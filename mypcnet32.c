@@ -176,7 +176,7 @@ static int __devinit mypcnet32_probe(struct pci_dev *pdev, const struct pci_devi
 
 	ndev->base_addr = base_io_addr; //填充ndev的base_addr
 	ndev->irq = pdev->irq; //填充ndev的irq
-	printk(" addigned IRQ %d\n", dev->irq);
+	printk(" addigned IRQ %d\n", ndev->irq);
 
 	lp = netdev_priv(ndev);  //获取私有空间
 
@@ -189,7 +189,7 @@ static int __devinit mypcnet32_probe(struct pci_dev *pdev, const struct pci_devi
 	lp->init_block->mode = 0x03;
 	lp->init_block->tlen_rlen = TX_RX_LEN;	
 	for (i = 0; i < 6; i++) {
-		lp->init_block->phys_addr[i] = ndev->dev_addr[i];
+		lp->init_block->mac_addr[i] = ndev->dev_addr[i];
 	}
 	lp->init_block->filter[0] = 0x00;
 	lp->init_block->filter[1] = 0x00;
