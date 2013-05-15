@@ -36,6 +36,7 @@
 static int __init mypcnet32_init_module(void);
 void __exit mypcnet32_cleanup_module(void);
 static int __devinit mypcnet32_probe(struct pci_dev *pdev, const struct pci_device_id *dev_id);
+static int pcnet32_alloc_ring(struct net_device *ndev);
 struct net_device *mypcnet32_net_device;
 /* pci_device_id 数据结构 */
 static struct pci_device_id mypcnet32_pci_tbl[] = {
