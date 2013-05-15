@@ -150,9 +150,18 @@ static int __devinit mypcnet32_probe(struct pci_dev *pdev, const struct pci_devi
 		ndev->dev_addr[2 * i + 1] = (val >> 8) & 0xff;
 	}
 	/************ debug *******************/
-	printk("csr12 %x ", read_csr(base_io_addr, 12));
-	printk("csr13 %x ", read_csr(base_io_addr, 13));
-	printk("csr14 %x ", read_csr(base_io_addr, 14));	
+	reset_chip(base_io_addr);
+	u8 promaddr[6];
+	printk("after reset print promaddr:\n");
+	for (i = 0; i < 6; i++) {
+		promaddr[i] = inb(base_io_addr + i);
+		printk("%x ", promaddr[i]);
+	}
+	printk("\n");
+	printk("csr12 %lx ", read_csr(base_io_addr, 12));
+	printk("csr13 %lx ", read_csr(base_io_addr, 13));
+	printk("csr14 %lx ", read_csr(base_io_addr, 14));	
+	printk("\n");
 	/************************/
 	printk(KERN_INFO "MAC ADDRESS: "); //输出mac地址以供检查
 	for (i = 0; i < 6; i++) {
