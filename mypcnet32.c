@@ -31,6 +31,7 @@
 #define IO_BDP		0x16
 #define IO_RESET	0x14
 #define IO_TOTAL_SIZE	0x20
+#define TX_RX_LEN 1 << 6 | 1 << 14 
 
 static int __init mypcnet32_init_module(void);
 void __exit mypcnet32_cleanup_module(void);
@@ -143,25 +144,28 @@ static int __devinit mypcnet32_probe(struct pci_dev *pdev, const struct pci_devi
 		printk(KERN_INFO "request region success\n");
 	ndev = alloc_etherdev(sizeof(*lp));
 	SET_NETDEV_DEV(ndev, &pdev->dev);
-	for (i = 0; i < 3; i++)	{  //填充mac地址
-		unsigned int val;
-		val = read_csr(base_io_addr, i + 12) & 0x0ffff;
-		ndev->dev_addr[2 * i] = val & 0xff;
-		ndev->dev_addr[2 * i + 1] = (val >> 8) & 0xff;
-	}
-	/************ debug *******************/
-	reset_chip(base_io_addr);
-	u8 promaddr[6];
-	printk("after reset print promaddr:\n");
 	for (i = 0; i < 6; i++) {
-		promaddr[i] = inb(base_io_addr + i);
-		printk("%x ", promaddr[i]);
+		ndev->dev_addr[i] = inb(base_io_addr + i);	
 	}
-	printk("\n");
-	printk("csr12 %lx ", read_csr(base_io_addr, 12));
-	printk("csr13 %lx ", read_csr(base_io_addr, 13));
-	printk("csr14 %lx ", read_csr(base_io_addr, 14));	
-	printk("\n");
+//	for (i = 0; i < 3; i++)	{  //填充mac地址
+//		unsigned int val;
+//		val = read_csr(base_io_addr, i + 12) & 0x0ffff;
+//		ndev->dev_addr[2 * i] = val & 0xff;
+//		ndev->dev_addr[2 * i + 1] = (val >> 8) & 0xff;
+//	} 
+	/************ debug *******************/
+	//reset_chip(base_io_addr);
+	//u8 promaddr[6];
+	//printk("after reset print promaddr:\n");
+	//for (i = 0; i < 6; i++) {
+	//	promaddr[i] = inb(base_io_addr + i);
+	//	printk("%x ", promaddr[i]);
+	//}
+	//printk("\n");
+	//printk("csr12 %lx ", read_csr(base_io_addr, 12));
+	//printk("csr13 %lx ", read_csr(base_io_addr, 13));
+	//printk("csr14 %lx ", read_csr(base_io_addr, 14));	
+	//printk("\n");
 	/************************/
 	printk(KERN_INFO "MAC ADDRESS: "); //输出mac地址以供检查
 	for (i = 0; i < 6; i++) {
@@ -170,6 +174,8 @@ static int __devinit mypcnet32_probe(struct pci_dev *pdev, const struct pci_devi
 	printk(KERN_INFO "\n");
 
 	ndev->base_addr = base_io_addr; //填充ndev的base_addr
+	ndev->irq = pdev->irq; //填充ndev的irq
+	printk(" addigned IRQ %d\n", dev->irq);
 
 	lp = netdev_priv(ndev);  //获取私有空间
 
@@ -178,9 +184,25 @@ static int __devinit mypcnet32_probe(struct pci_dev *pdev, const struct pci_devi
 		printk("Init_block allocation success\n");
 	else 
 		printk("Init_block allocation failed\n");
+/* 填充INIT_BLOCK的成员 */
+	lp->init_block->mode = 0x03;
+	lp->init_block->tlen_rlen = TX_RX_LEN;	
+	for (i = 0; i < 6; i++) {
+		lp->init_block->phys_addr[i] = ndev->dev_addr[i];
+	}
+	lp->init_block->filter[0] = 0x00;
+	lp->init_block->filter[1] = 0x00;
+//	lp->init_block->rx_ring = 	
+//	lp->init_block->tx_ring = 
+
+	write_bcr(base_io_addr, 20, 2); //32bit模式
+	write_csr(base_io_addr, 1, (lp->init_dma_addr & 0xffff)); //将INIT_BLOCK的物理地址写到CSR1,CSR2
+	write_csr(base_io_addr, 2, (lp->init_dma_addr >> 16));
+
 	lp->pci_dev = pdev;
 	lp->tx_ring_size = 16;
 	lp->rx_ring_size = 16;
+
 	if(!register_netdev(ndev)) //注册net_device数据结构
 		printk(KERN_INFO "register_netdev success\n");
 	else 
