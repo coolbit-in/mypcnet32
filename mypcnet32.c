@@ -105,7 +105,10 @@ static void write_bcr(unsigned long base_io_addr, int index, int val)
 	outl(index, base_io_addr + IO_RAP);
 	outl(val, base_io_addr + IO_BDP);
 }
-
+static void reset_chip(unsigned long base_io_addr)
+{
+	inl(base_io_addr + IO_RESET); 
+}
 /* 模块初始化函数 */
 static int __init mypcnet32_init_module(void)
 {
@@ -124,6 +127,7 @@ static int __devinit mypcnet32_probe(struct pci_dev *pdev, const struct pci_devi
 	int i;
 	struct mypcnet32_private *lp;	
 	unsigned long base_io_addr;
+
 
 	if (!pci_enable_device(pdev)) {  //使能设备
 		printk(KERN_INFO "pci enable device success!\n");
@@ -145,7 +149,11 @@ static int __devinit mypcnet32_probe(struct pci_dev *pdev, const struct pci_devi
 		ndev->dev_addr[2 * i] = val & 0xff;
 		ndev->dev_addr[2 * i + 1] = (val >> 8) & 0xff;
 	}
-
+	/************ debug *******************/
+	printk("csr12 %x ", read_csr(base_io_addr, 12));
+	printk("csr13 %x ", read_csr(base_io_addr, 13));
+	printk("csr14 %x ", read_csr(base_io_addr, 14));	
+	/************************/
 	printk(KERN_INFO "MAC ADDRESS: "); //输出mac地址以供检查
 	for (i = 0; i < 6; i++) {
 		printk(KERN_INFO "%x:", ndev->dev_addr[i]);
