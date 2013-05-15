@@ -31,12 +31,18 @@
 #define IO_BDP		0x16
 #define IO_RESET	0x14
 #define IO_TOTAL_SIZE	0x20
-#define TX_RX_LEN 1 << 6 | 1 << 14 
+#define TX_RX_LEN (1 << 6 | 1 << 14) 
+
+#define PKT_BUF_SKB 1544
+#define PKT_BUF_SIZE (PKT_BUF_SKB - NET_IP_ALIGN)
+#define NEG_BUF_SIZE (NET_IP_ALIGN - PKT_BUF_SKB)
 
 static int __init mypcnet32_init_module(void);
 void __exit mypcnet32_cleanup_module(void);
 static int __devinit mypcnet32_probe(struct pci_dev *pdev, const struct pci_device_id *dev_id);
-static int pcnet32_alloc_ring(struct net_device *ndev);
+static int mypcnet32_alloc_ring(struct net_device *ndev);
+static int mypcnet32_init_ring(struct net_device *ndev)
+
 struct net_device *mypcnet32_net_device;
 /* pci_device_id 数据结构 */
 static struct pci_device_id mypcnet32_pci_tbl[] = {
@@ -59,6 +65,22 @@ struct mypcnet32_init_block {
 	__le32 rx_ring_addr;
 	__le32 tx_ring_addr;
 };
+/* 定义 tx_descriptor 数据结构*/
+struct mypcnet32_tx_descriptor {
+	__le32 base;
+	__le16 buf_length;
+	__le16 status;
+	__le32 msg_length;
+	__le32 reserved;	
+}
+/* 定义 rx_descriptor 数据结构*/
+struct mypcnet32_rx_descriptor {
+	__le32 base;
+	__le16 length;
+	__le16 status;
+	__le32 misc;
+	__le32 reserved;	
+}
 /* 定义 pci_driver 实例 mypcnet32_driver */
 static struct pci_driver mypcnet32_driver = {
 	.name = DRIVER_NAME,
@@ -69,17 +91,19 @@ static struct pci_driver mypcnet32_driver = {
 /* 定义私有空间数据结构*/
 struct mypcnet32_private {
 	struct mypcnet32_init_block *init_block;
-//	struct mypcnet32_tx_descriptor *tx_ring;
-//	struct mypcnet32_rx_descriptor *rx_ring;
+	struct mypcnet32_tx_descriptor *tx_descriptor;
+	struct mypcnet32_rx_descriptor *rx_descriptor;
 	struct pci_dev *pci_dev;
 //	struct net_device *ndev;
 //	struct net_device *next;
 //	const char *name;
-//	struct sk_buff **tx_skbuff;
-//	struct sk_buff **rx_skbuff;
-//	dma_addr_t *tx_dma_addr;
-//	dma_addr_t *rx_dma_addr;
+	struct sk_buff **tx_skbuff;
+	struct sk_buff **rx_skbuff;
 	dma_addr_t init_dma_addr;
+	dma_addr_t tx_descriptor_dma_addr;
+	dma_addr_t rx_descriptor_dma_addr;
+	dma_addr_t *rx_skbuff_dma_addr;
+	dma_addr_t *rx_skbuff_dma_addr;
 	int rx_ring_size;
 	int tx_ring_size;
 };
@@ -199,7 +223,7 @@ static int __devinit mypcnet32_probe(struct pci_dev *pdev, const struct pci_devi
 	write_bcr(base_io_addr, 20, 2); //32bit模式
 	write_csr(base_io_addr, 1, (lp->init_dma_addr & 0xffff)); //将INIT_BLOCK的物理地址写到CSR1,CSR2
 	write_csr(base_io_addr, 2, (lp->init_dma_addr >> 16));
-
+	wmb();
 	lp->pci_dev = pdev;
 	lp->tx_ring_size = 16;
 	lp->rx_ring_size = 16;
@@ -212,6 +236,63 @@ static int __devinit mypcnet32_probe(struct pci_dev *pdev, const struct pci_devi
 	pci_set_drvdata(pdev, ndev);
 	return 0;																															
 }
+static int mypcnet32_alloc_ring(struct net_device *ndev)
+{
+	struct pcnet32_private *lp = netdev_priv(ndev);
+	lp->tx_descriptor = pci_alloc_consistent(lp->pci_dev, sizeof(struct mypcnet32_tx_descriptor) * 16, &lp->tx_descriptor_dma_addr);
+	if (lp->tx_descriptor == NULL) {
+		printk("Error: alloc tx_descriptor failed\n")
+
+	}
+	lp->rx_descriptor = pci_alloc_consistent(lp->pci_dev, sizeof(struct mypcnet32_rx_descriptor) * 16, &lp->rx_descriptor_dma_addr);
+	if (lp->rx_descriptor == NULL) {
+		printk("Error: alloc rx_descriptor failed\n");
+	}
+	lp->tx_skbuff_dma_addr = kcalloc(16, sizeof(dma_addr_t), GFP_ATOMIC);
+	if (lp->tx_skbuff_dma_addr == NULL) {
+		printk("Error: alloc tx_skbuff_dma_addr failed\n");
+	}
+	lp->rx_skbuff_dma_addr = kcalloc(16, sizeof(dma_addr_t), GFP_ATOMIC);
+	if (lp->rx_skbuff_dma_addr == NULL) {
+		printk("Error: alloc rx_skbuff_dma_addr failed\n");
+	}
+	lp->tx_skbuff = kcalloc(16, sizeof(struct sk_buff *), GFP_ATOMIC);
+	if (lp->tx_skbuff == NULL) {
+		printk("Error: alloc tx_skbuff failed\n");
+	}
+	lp->rx_skbuff = kcalloc(16, sizeof(struct sk_buff *), GFP_ATOMIC);
+	if (lp->rx_skbuff == NULL) {
+		printk("Error: alloc rx_skbuff failed\n");
+	}
+	return 0;	
+}
+
+static int mypcnet32_init_ring(struct net_device *ndev)
+{
+	struct mypcnet32_private *lp = netdev_priv(ndev);
+	int i;
+	lp->tx_full = 0;
+	lp->cur_rx = lp->cur_tx = 0;
+	lp->dirty_rx = lp->dirty_tx = 0;
+	for (i = 0; i < 1; i++) {
+		lp->rx_skbuff[i] = dev_alloc_skb(PKT_BUF_SKB);
+		skb_reserve(lp->rx_skbuff, NET_IP_ALIGN);
+		rmb();
+		lp->rx_skbuff_dma_addr = (lp->pci_dev, lp->rx_skbuff->data, PKT_BUF_SIZE, PCI_DMA_FROMDEVICE);
+		lp->rx_descriptor[i].base = cpu_to_le32(lp->rx_skbuff_dma_addr[i]);
+		lp->rx_descriptor[i].buf_length = cpu_to_le16(NEG_BUF_SIZE);
+		wmb();
+		lp->rx_descriptor[i].status = cpu_to_le16(1 << 15);		
+	}
+	for (i = 0; i < 16; i++) {
+		lp->tx_descriptor[i].static = 0;
+		wmb();
+		lp->tx_descriptor[i].base = 0;
+		lp->tx_skbuff_dma_addr[i] = 0;
+	}
+
+}
+
 
 void __exit mypcnet32_cleanup_module(void)
 {
