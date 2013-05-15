@@ -41,7 +41,7 @@ static int __init mypcnet32_init_module(void);
 void __exit mypcnet32_cleanup_module(void);
 static int __devinit mypcnet32_probe(struct pci_dev *pdev, const struct pci_device_id *dev_id);
 static int mypcnet32_alloc_ring(struct net_device *ndev);
-static int mypcnet32_init_ring(struct net_device *ndev)
+static int mypcnet32_init_ring(struct net_device *ndev);
 
 struct net_device *mypcnet32_net_device;
 /* pci_device_id 数据结构 */
@@ -66,21 +66,21 @@ struct mypcnet32_init_block {
 	__le32 tx_ring_addr;
 };
 /* 定义 tx_descriptor 数据结构*/
-struct mypcnet32_tx_descriptor {
+struct mypcnet32_rx_descriptor {
 	__le32 base;
 	__le16 buf_length;
 	__le16 status;
 	__le32 msg_length;
 	__le32 reserved;	
-}
+};
 /* 定义 rx_descriptor 数据结构*/
-struct mypcnet32_rx_descriptor {
+struct mypcnet32_tx_descriptor {
 	__le32 base;
 	__le16 length;
 	__le16 status;
 	__le32 misc;
 	__le32 reserved;	
-}
+};
 /* 定义 pci_driver 实例 mypcnet32_driver */
 static struct pci_driver mypcnet32_driver = {
 	.name = DRIVER_NAME,
@@ -102,10 +102,11 @@ struct mypcnet32_private {
 	dma_addr_t init_dma_addr;
 	dma_addr_t tx_descriptor_dma_addr;
 	dma_addr_t rx_descriptor_dma_addr;
+	dma_addr_t *tx_skbuff_dma_addr;
 	dma_addr_t *rx_skbuff_dma_addr;
-	dma_addr_t *rx_skbuff_dma_addr;
-	int rx_ring_size;
-	int tx_ring_size;
+	u16 cur_tx, cur_rx;
+	u16 dirty_tx, dirty_rx;
+	u16 tx_full;
 };
 /* 寄存器读写函数 */
 static unsigned long read_csr(unsigned long base_io_addr, int index)
@@ -201,7 +202,7 @@ static int __devinit mypcnet32_probe(struct pci_dev *pdev, const struct pci_devi
 	ndev->base_addr = base_io_addr; //填充ndev的base_addr
 	ndev->irq = pdev->irq; //填充ndev的irq
 	printk(" addigned IRQ %d\n", ndev->irq);
-
+	mypcnet32_alloc_ring(ndev);
 	lp = netdev_priv(ndev);  //获取私有空间
 
 	lp->init_block = pci_alloc_consistent(pdev, sizeof(*lp->init_block), &lp->init_dma_addr); //分配Init_block在内存中的空间
@@ -217,16 +218,16 @@ static int __devinit mypcnet32_probe(struct pci_dev *pdev, const struct pci_devi
 	}
 	lp->init_block->filter[0] = 0x00;
 	lp->init_block->filter[1] = 0x00;
-//	lp->init_block->rx_ring = 	
-//	lp->init_block->tx_ring = 
+	lp->init_block->rx_ring_addr = lp->rx_descriptor_dma_addr;
+	lp->init_block->tx_ring_addr = lp->tx_descriptor_dma_addr; 
 
 	write_bcr(base_io_addr, 20, 2); //32bit模式
 	write_csr(base_io_addr, 1, (lp->init_dma_addr & 0xffff)); //将INIT_BLOCK的物理地址写到CSR1,CSR2
 	write_csr(base_io_addr, 2, (lp->init_dma_addr >> 16));
 	wmb();
 	lp->pci_dev = pdev;
-	lp->tx_ring_size = 16;
-	lp->rx_ring_size = 16;
+	//lp->tx_ring_size = 16;
+	//lp->rx_ring_size = 16;
 
 	if(!register_netdev(ndev)) //注册net_device数据结构
 		printk(KERN_INFO "register_netdev success\n");
@@ -238,11 +239,10 @@ static int __devinit mypcnet32_probe(struct pci_dev *pdev, const struct pci_devi
 }
 static int mypcnet32_alloc_ring(struct net_device *ndev)
 {
-	struct pcnet32_private *lp = netdev_priv(ndev);
+	struct mypcnet32_private *lp = netdev_priv(ndev);
 	lp->tx_descriptor = pci_alloc_consistent(lp->pci_dev, sizeof(struct mypcnet32_tx_descriptor) * 16, &lp->tx_descriptor_dma_addr);
 	if (lp->tx_descriptor == NULL) {
-		printk("Error: alloc tx_descriptor failed\n")
-
+		printk("Error: alloc tx_descriptor failed\n");
 	}
 	lp->rx_descriptor = pci_alloc_consistent(lp->pci_dev, sizeof(struct mypcnet32_rx_descriptor) * 16, &lp->rx_descriptor_dma_addr);
 	if (lp->rx_descriptor == NULL) {
@@ -276,21 +276,21 @@ static int mypcnet32_init_ring(struct net_device *ndev)
 	lp->dirty_rx = lp->dirty_tx = 0;
 	for (i = 0; i < 1; i++) {
 		lp->rx_skbuff[i] = dev_alloc_skb(PKT_BUF_SKB);
-		skb_reserve(lp->rx_skbuff, NET_IP_ALIGN);
+		skb_reserve(lp->rx_skbuff[i], NET_IP_ALIGN);
 		rmb();
-		lp->rx_skbuff_dma_addr = (lp->pci_dev, lp->rx_skbuff->data, PKT_BUF_SIZE, PCI_DMA_FROMDEVICE);
+		lp->rx_skbuff_dma_addr[i] = pci_map_single(lp->pci_dev, lp->rx_skbuff[i]->data, PKT_BUF_SIZE, PCI_DMA_FROMDEVICE);
 		lp->rx_descriptor[i].base = cpu_to_le32(lp->rx_skbuff_dma_addr[i]);
 		lp->rx_descriptor[i].buf_length = cpu_to_le16(NEG_BUF_SIZE);
 		wmb();
 		lp->rx_descriptor[i].status = cpu_to_le16(1 << 15);		
 	}
 	for (i = 0; i < 16; i++) {
-		lp->tx_descriptor[i].static = 0;
+		lp->tx_descriptor[i].status = 0;
 		wmb();
 		lp->tx_descriptor[i].base = 0;
 		lp->tx_skbuff_dma_addr[i] = 0;
 	}
-
+	return 0;
 }
 
 
