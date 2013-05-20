@@ -42,6 +42,7 @@ void __exit mypcnet32_cleanup_module(void);
 static int __devinit mypcnet32_probe(struct pci_dev *pdev, const struct pci_device_id *dev_id);
 static int mypcnet32_alloc_ring(struct net_device *ndev);
 static int mypcnet32_init_ring(struct net_device *ndev);
+static int mypcnet32_open(struct net_device *ndev);
 
 struct net_device *mypcnet32_net_device;
 /* pci_device_id 数据结构 */
@@ -106,6 +107,7 @@ struct mypcnet32_private {
 	dma_addr_t *rx_skbuff_dma_addr;
 	u16 cur_tx, cur_rx;
 	u16 dirty_tx, dirty_rx;
+	u16 tx_rx_len_mask;
 	u16 tx_full;
 };
 /* 寄存器读写函数 */
@@ -202,7 +204,9 @@ static int __devinit mypcnet32_probe(struct pci_dev *pdev, const struct pci_devi
 	ndev->base_addr = base_io_addr; //填充ndev的base_addr
 	ndev->irq = pdev->irq; //填充ndev的irq
 	printk(" addigned IRQ %d\n", ndev->irq);
-	mypcnet32_alloc_ring(ndev);
+
+	mypcnet32_alloc_ring(ndev); //分配描述符空间
+	
 	lp = netdev_priv(ndev);  //获取私有空间
 
 	lp->init_block = pci_alloc_consistent(pdev, sizeof(*lp->init_block), &lp->init_dma_addr); //分配Init_block在内存中的空间
@@ -226,8 +230,12 @@ static int __devinit mypcnet32_probe(struct pci_dev *pdev, const struct pci_devi
 	write_csr(base_io_addr, 2, (lp->init_dma_addr >> 16));
 	wmb();
 	lp->pci_dev = pdev;
+	lp->tx_rx_len_mask = 15;
 	//lp->tx_ring_size = 16;
 	//lp->rx_ring_size = 16;
+	ndev->open = &mypcne32_open;
+	ndev->hard_start_xmit = &mypcnet32_start_xmit;
+//	ndev->stop = &mypcnet32_close;
 
 	if(!register_netdev(ndev)) //注册net_device数据结构
 		printk(KERN_INFO "register_netdev success\n");
@@ -266,6 +274,57 @@ static int mypcnet32_alloc_ring(struct net_device *ndev)
 	}
 	return 0;	
 }
+static int mypcnet32_start_xmit(struct sk_buff *skb, net_device *ndev)
+{
+	struct mypcnet32_private *lp = netdev_priv(ndev);
+	unsigned long base_io_addr = ndev->base_addr;
+	int entry;
+	entry = lp->cur_tx & lp->tx_rx_len_mask;
+	lp->tx_descriptor[entry].length = cpu_to_le16(-skb->len);
+	lp->tx_descriptor[entry].misc = 0x00000000;
+	lp->tx_skbuff[entry] = skb;
+	lp->tx_skbuff_dma_addr[entry] =
+		pci_map_single(lp->pci_dev, skb->data, skb->len, PCI_DMA_TODEVICE);
+	lp->tx_descriptor[entry].base = cpu_to_le32(lp->tx_descriptor_dma_addr[entry]);
+	wmb();
+	lp->tx_descriptor[entry].status = cpu_to_le16(0x8300);
+	lp->cur_tx++;
+	dev->stats.tx_bytes += skb->len;
+	write_csr(base_io_addr, 0, 0x048) //置1 TDMD IENA
+	if (lp->tx_descriptor[(entry + 1) & lp->tx_rx_len_mask].base != 0) {
+		lp->tx_full = 1;
+		netif_stop_queue(ndev);
+	}		
+}
+
+static int mypcnet32_tx(struct net_device *ndev)
+{
+	struct mypcnet32_private *lp = netdev_priv(ndev);
+	unsigned int dirty_tx = lp->dirty_tx;
+
+	while(dirty_tx != lp->cur_tx) {
+		int entry = dirty_tx & lp->tx_rx_len_mask;
+		int status = le16_to_cpu(lp->tx_descriptor[entry].status);
+		if (status & (1 << 15))
+			break;
+		lp->tx_descriptor[entry].base = 0;
+		if (lp->tx_skbuff[entry]) {
+			pci_unmap_single(lp->pci_dev, lp->tx_skbuff_dma_addr[entry],
+				lp->tx_skbuff[entry]->len, PCI_DMA_TODEVICE);
+			dev_kfree_skb_any(lp->tx_skbuff[entry]);
+			lp->tx_skbuff[entry] = NULL;
+			lp->tx_skbuff_dma_addr[entry] = 0;
+		}
+		dirty_tx++;
+	}
+	delta = lp->cur_tx - dirty_tx;
+	if (lp->tx_full && netif_queue_stopped(ndev) && (delta < 16 - 2)) {
+		lp->tx_full = 0;
+		netif_wake_queue(ndev);
+	}
+	lp->dirty_tx = dirty_tx;
+	return 0;
+}
 
 static int mypcnet32_init_ring(struct net_device *ndev)
 {
@@ -274,7 +333,7 @@ static int mypcnet32_init_ring(struct net_device *ndev)
 	lp->tx_full = 0;
 	lp->cur_rx = lp->cur_tx = 0;
 	lp->dirty_rx = lp->dirty_tx = 0;
-	for (i = 0; i < 1; i++) {
+	for (i = 0; i < 16; i++) {
 		lp->rx_skbuff[i] = dev_alloc_skb(PKT_BUF_SKB);
 		skb_reserve(lp->rx_skbuff[i], NET_IP_ALIGN);
 		rmb();
@@ -282,17 +341,72 @@ static int mypcnet32_init_ring(struct net_device *ndev)
 		lp->rx_descriptor[i].base = cpu_to_le32(lp->rx_skbuff_dma_addr[i]);
 		lp->rx_descriptor[i].buf_length = cpu_to_le16(NEG_BUF_SIZE);
 		wmb();
-		lp->rx_descriptor[i].status = cpu_to_le16(1 << 15);		
+		lp->rx_descriptor[i].status = cpu_to_le16(1 << 15); //接收描述符属于设备
 	}
 	for (i = 0; i < 16; i++) {
-		lp->tx_descriptor[i].status = 0;
+		lp->tx_descriptor[i].status = 0; //发送描述符属于cpu
 		wmb();
 		lp->tx_descriptor[i].base = 0;
 		lp->tx_skbuff_dma_addr[i] = 0;
 	}
 	return 0;
 }
+static irqreturn_t mypcnet32_interrupt(int irq, void *dev_id)
+{
+	struct net_device *ndev = dev_id;
+	struct mypcnet32_private *lp;
+	unsigned long base_io_addr = dev->base_addr;
+	u16 csr0;
+	lp = netdev_priv(ndev);
+	csr0 = read_csr(base_io_addr, 0);
+	while(csr0 & 0x8f00) {
+		if (csr0 == 0xffff)
+			break;
+		write_csr(base_io_addr, 0, csr0 & ~0x004f);
+		if (csr0 & 0x4000)
+			ndev->stats.tx_errors++;
+		if (csr0 & 0x1000) {
+			
+		}
+	}
+}
+static int mypcnet32_open(struct net_device *ndev)
+{
+	struct mypcnet32_private *lp = netdev_priv(ndev);
+	unsigned long base_io_addr = ndev->base_addr;
+	unsigned long val;
+	if(!request_irq(dev->irq, &mypcnet32_interrupt, 0, "mypcnet32driver", 
+		(void *)ndev)) { //注册中断处理函数
+		printk("request_irq success\n");
+	}
+	mypcnet32_init_ring(ndev);
+	val = read_bcr(base_io_addr, 2); //set autoselect bit
+	val |= 2;
+	write_bcr(base_io_addr, 2, val);
+	write_csr(base_io_addr, 4, 0x0915); // auto tx pad
+	write_csr(base_io_addr, 0, 0x0001); // 置1 INIT位
+//	netif_start_queue(ndev);
+	int i = 0;
+	while (i++ < 100)
+		if (lp->a.read_csr(ioaddr, CSR0) & 0x0100) //持续检测IDON位有没有置1 
+			break;
+	write_csr(base_io_addr, 0, 0x0002); //置1 STRT位
+	wmb();
+	//reset_chip(base_io_addr);
+	//write_bcr(base_io_addr, 20, 2); //
+	netif_start_queue(ndev);
+	return 0;
+}
 
+static int mypcnet32_close(struct net_device *ndev) 
+{
+	struct mypcnet32_private *lp = netdev_priv(ndev);
+	unsigned long base_io_addr = ndev->base_addr;
+	netif_stop_queue(ndev); //停止队列
+	write_csr(base_io_addr, 0, 0x0004); //置1 STOP位
+	free_irq(ndev->irq, ndev); //卸载irq
+	return 0;
+}
 
 void __exit mypcnet32_cleanup_module(void)
 {
