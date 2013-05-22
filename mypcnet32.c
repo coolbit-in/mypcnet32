@@ -44,6 +44,7 @@ static int mypcnet32_alloc_ring(struct net_device *ndev);
 static int mypcnet32_init_ring(struct net_device *ndev);
 static int mypcnet32_open(struct net_device *ndev);
 static int mypcnet32_start_xmit(struct sk_buff *skb, struct net_device *ndev);
+static int mypcnet32_close(struct net_device *ndev);
 struct net_device *mypcnet32_net_device;
 /* pci_device_id 数据结构 */
 static struct pci_device_id mypcnet32_pci_tbl[] = {
@@ -235,7 +236,7 @@ static int __devinit mypcnet32_probe(struct pci_dev *pdev, const struct pci_devi
 	//lp->rx_ring_size = 16;
 	ndev->open = &mypcnet32_open;
 	ndev->hard_start_xmit = &mypcnet32_start_xmit;
-//	ndev->stop = &mypcnet32_close;
+	ndev->stop = &mypcnet32_close;
 
 	if(!register_netdev(ndev)) //注册net_device数据结构
 		printk(KERN_INFO "register_netdev success\n");
@@ -434,9 +435,10 @@ static int mypcnet32_open(struct net_device *ndev)
 	unsigned long base_io_addr = ndev->base_addr;
 	unsigned long val;
 	int i = 0;
+	printk("mypcnet32_open is loaded~\n");
 	if(!request_irq(ndev->irq, &mypcnet32_interrupt, 0, "mypcnet32driver", 
 		(void *)ndev)) { //注册中断处理函数
-		printk("request_irq success\n");
+		printk("  request_irq success\n");
 	}
 	mypcnet32_init_ring(ndev);
 	val = read_bcr(base_io_addr, 2); //set autoselect bit
@@ -448,6 +450,7 @@ static int mypcnet32_open(struct net_device *ndev)
 	while (i++ < 100)
 		if (read_csr(base_io_addr, 0) & 0x0100) //持续检测IDON位有没有置1 
 			break;
+	printk("  Init process is down\n");
 	write_csr(base_io_addr, 0, 0x0002); //置1 STRT位
 	wmb();
 	//reset_chip(base_io_addr);
@@ -459,6 +462,7 @@ static int mypcnet32_open(struct net_device *ndev)
 static int mypcnet32_close(struct net_device *ndev) 
 {
 	unsigned long base_io_addr = ndev->base_addr;
+	printk("mypcnet32_close is loaded\n");
 	netif_stop_queue(ndev); //停止队列
 	write_csr(base_io_addr, 0, 0x0004); //置1 STOP位
 	free_irq(ndev->irq, ndev); //卸载irq
