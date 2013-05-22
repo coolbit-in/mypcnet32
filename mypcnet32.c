@@ -43,7 +43,7 @@ static int __devinit mypcnet32_probe(struct pci_dev *pdev, const struct pci_devi
 static int mypcnet32_alloc_ring(struct net_device *ndev);
 static int mypcnet32_init_ring(struct net_device *ndev);
 static int mypcnet32_open(struct net_device *ndev);
-
+static int mypcnet32_start_xmit(struct sk_buff *skb, struct net_device *ndev);
 struct net_device *mypcnet32_net_device;
 /* pci_device_id 数据结构 */
 static struct pci_device_id mypcnet32_pci_tbl[] = {
@@ -233,7 +233,7 @@ static int __devinit mypcnet32_probe(struct pci_dev *pdev, const struct pci_devi
 	lp->tx_rx_len_mask = 15;
 	//lp->tx_ring_size = 16;
 	//lp->rx_ring_size = 16;
-	ndev->open = &mypcne32_open;
+	ndev->open = &mypcnet32_open;
 	ndev->hard_start_xmit = &mypcnet32_start_xmit;
 //	ndev->stop = &mypcnet32_close;
 
@@ -274,7 +274,7 @@ static int mypcnet32_alloc_ring(struct net_device *ndev)
 	}
 	return 0;	
 }
-static int mypcnet32_start_xmit(struct sk_buff *skb, net_device *ndev)
+static int mypcnet32_start_xmit(struct sk_buff *skb, struct net_device *ndev)
 {
 	struct mypcnet32_private *lp = netdev_priv(ndev);
 	unsigned long base_io_addr = ndev->base_addr;
@@ -283,22 +283,23 @@ static int mypcnet32_start_xmit(struct sk_buff *skb, net_device *ndev)
 	lp->tx_descriptor[entry].length = cpu_to_le16(-skb->len);
 	lp->tx_descriptor[entry].misc = 0x00000000;
 	lp->tx_skbuff[entry] = skb;
-	lp->tx_skbuff_dma_addr[entry] =
-		pci_map_single(lp->pci_dev, skb->data, skb->len, PCI_DMA_TODEVICE);
-	lp->tx_descriptor[entry].base = cpu_to_le32(lp->tx_descriptor_dma_addr[entry]);
+	lp->tx_skbuff_dma_addr[entry] = pci_map_single(lp->pci_dev, skb->data, skb->len, PCI_DMA_TODEVICE);
+	lp->tx_descriptor[entry].base = cpu_to_le32(lp->tx_skbuff_dma_addr[entry]);
 	wmb();
 	lp->tx_descriptor[entry].status = cpu_to_le16(0x8300);
 	lp->cur_tx++;
-	dev->stats.tx_bytes += skb->len;
-	write_csr(base_io_addr, 0, 0x048) //置1 TDMD IENA
+	ndev->stats.tx_bytes += skb->len;
+	write_csr(base_io_addr, 0, 0x048); //置1 TDMD IENA
 	if (lp->tx_descriptor[(entry + 1) & lp->tx_rx_len_mask].base != 0) {
 		lp->tx_full = 1;
 		netif_stop_queue(ndev);
-	}		
+	}	
+	return 0;	
 }
 
 static int mypcnet32_tx(struct net_device *ndev)
 {
+	int delta;
 	struct mypcnet32_private *lp = netdev_priv(ndev);
 	unsigned int dirty_tx = lp->dirty_tx;
 
@@ -329,12 +330,13 @@ static int mypcnet32_tx(struct net_device *ndev)
 static int mypcnet32_rx(struct net_device *ndev)
 {
 	struct mypcnet32_private *lp = netdev_priv(ndev);
-	int entry = lp->cur_rx & lp->rx_mod_mask;
+	int entry = lp->cur_rx & lp->tx_rx_len_mask;
 	struct mypcnet32_rx_descriptor *rxp = &lp->rx_descriptor[entry];
 	if ((short)le16_to_cpu(rxp->status) >= 0) {
 		int status = (short)le16_to_cpu(rxp->status) >> 8;
 		struct sk_buff *skb;
 		short pkt_len;
+		struct sk_buff *newskb;
 		if (status != 0x03) {
 			if (status & 0x01)
 				ndev->stats.rx_errors++;
@@ -359,7 +361,6 @@ static int mypcnet32_rx(struct net_device *ndev)
 			ndev->stats.rx_errors++;
 			return 0;
 		}
-		struct sk_buff *newskb;
 		if ((newskb = dev_alloc_skb(PKT_BUF_SKB))) {
 			skb_reserve(newskb, NET_IP_ALIGN);
 			skb = lp->rx_skbuff[entry];
@@ -376,7 +377,7 @@ static int mypcnet32_rx(struct net_device *ndev)
 			ndev->stats.rx_bytes += skb->len;
 			skb->protocol = eth_type_trans(skb, ndev);
 			netif_rx(skb);
-			dev->stats.rx_packets++;
+			ndev->stats.rx_packets++;
 		}
 	}
 	return 0;
@@ -410,7 +411,7 @@ static irqreturn_t mypcnet32_interrupt(int irq, void *dev_id)
 {
 	struct net_device *ndev = dev_id;
 	struct mypcnet32_private *lp;
-	unsigned long base_io_addr = dev->base_addr;
+	unsigned long base_io_addr = ndev->base_addr;
 	u16 csr0;
 	lp = netdev_priv(ndev);
 	csr0 = read_csr(base_io_addr, 0);
@@ -430,10 +431,10 @@ static irqreturn_t mypcnet32_interrupt(int irq, void *dev_id)
 }
 static int mypcnet32_open(struct net_device *ndev)
 {
-	struct mypcnet32_private *lp = netdev_priv(ndev);
 	unsigned long base_io_addr = ndev->base_addr;
 	unsigned long val;
-	if(!request_irq(dev->irq, &mypcnet32_interrupt, 0, "mypcnet32driver", 
+	int i = 0;
+	if(!request_irq(ndev->irq, &mypcnet32_interrupt, 0, "mypcnet32driver", 
 		(void *)ndev)) { //注册中断处理函数
 		printk("request_irq success\n");
 	}
@@ -444,9 +445,8 @@ static int mypcnet32_open(struct net_device *ndev)
 	write_csr(base_io_addr, 4, 0x0915); // auto tx pad
 	write_csr(base_io_addr, 0, 0x0001); // 置1 INIT位
 //	netif_start_queue(ndev);
-	int i = 0;
 	while (i++ < 100)
-		if (lp->a.read_csr(ioaddr, CSR0) & 0x0100) //持续检测IDON位有没有置1 
+		if (read_csr(base_io_addr, 0) & 0x0100) //持续检测IDON位有没有置1 
 			break;
 	write_csr(base_io_addr, 0, 0x0002); //置1 STRT位
 	wmb();
@@ -458,7 +458,6 @@ static int mypcnet32_open(struct net_device *ndev)
 
 static int mypcnet32_close(struct net_device *ndev) 
 {
-	struct mypcnet32_private *lp = netdev_priv(ndev);
 	unsigned long base_io_addr = ndev->base_addr;
 	netif_stop_queue(ndev); //停止队列
 	write_csr(base_io_addr, 0, 0x0004); //置1 STOP位
