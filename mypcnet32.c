@@ -501,8 +501,10 @@ static int mypcnet32_close(struct net_device *ndev)
 	unsigned long base_io_addr = ndev->base_addr;
 	printk("mypcnet32_close is loaded\n");
 	netif_stop_queue(ndev); //停止队列
+	printk("  stop_queue OK\n");
 	write_csr(base_io_addr, 0, 0x0004); //置1 STOP位
 	free_irq(ndev->irq, ndev); //卸载irq
+	printk("  free_irq OK\n");
 	return 0;
 }
 static void __devexit mypcnet32_pci_driver_remove(struct pci_dev *pdev)
