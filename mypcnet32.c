@@ -471,11 +471,12 @@ static int mypcnet32_close(struct net_device *ndev)
 
 void __exit mypcnet32_cleanup_module(void)
 {
-	struct mypcnet32_private *lp = netdev_priv(mypcnet32_net_device);
-	unregister_netdev(mypcnet32_net_device);
-	release_region(mypcnet32_net_device->base_addr, 0x20);
-	pci_free_consistent(lp->pci_dev, sizeof(*(lp->init_block)), lp->init_block, lp->init_dma_addr);
-	free_netdev(mypcnet32_net_device);
+//	struct mypcnet32_private *lp = netdev_priv(mypcnet32_net_device);
+//	unregister_netdev(mypcnet32_net_device);
+//	release_region(mypcnet32_net_device->base_addr, 0x20);
+//	pci_free_consistent(lp->pci_dev, sizeof(*(lp->init_block)), lp->init_block, lp->init_dma_addr);
+//	free_netdev(mypcnet32_net_device);
+//	pci_unregister_driver(&mypcnet32_driver);
 	pci_unregister_driver(&mypcnet32_driver);
 	printk(KERN_INFO "mypcnet32 driver is clean up\n");
 }
