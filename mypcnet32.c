@@ -326,6 +326,61 @@ static int mypcnet32_tx(struct net_device *ndev)
 	return 0;
 }
 
+static int mypcnet32_rx(struct net_device *ndev)
+{
+	struct mypcnet32_private *lp = netdev_priv(ndev);
+	int entry = lp->cur_rx & lp->rx_mod_mask;
+	struct mypcnet32_rx_descriptor *rxp = &lp->rx_descriptor[entry];
+	if ((short)le16_to_cpu(rxp->status) >= 0) {
+		int status = (short)le16_to_cpu(rxp->status) >> 8;
+		struct sk_buff *skb;
+		short pkt_len;
+		if (status != 0x03) {
+			if (status & 0x01)
+				ndev->stats.rx_errors++;
+			if (status & 0x20)
+				ndev->stats.rx_frame_errors++;
+			if (status & 0x10)
+				ndev->stats.rx_over_errors++;
+			if (status & 0x08)
+				ndev->stats.rx_crc_errors++;
+			if (status & 0x04)
+				ndev->stats.rx_fifo_errors++;
+			return 0;
+		}
+		pkt_len = (le32_to_cpu(rxp->msg_length) & 0xfff) - 4;
+		if (unlikely(pkt_len > PKT_BUF_SIZE)) {
+			printk("Impossible packet size!\n");
+			ndev->stats.rx_errors++;
+			return 0;
+		}
+		if (pkt_len < 60) {
+			printk("Runt packet\n");
+			ndev->stats.rx_errors++;
+			return 0;
+		}
+		struct sk_buff *newskb;
+		if ((newskb = dev_alloc_skb(PKT_BUF_SKB))) {
+			skb_reserve(newskb, NET_IP_ALIGN);
+			skb = lp->rx_skbuff[entry];
+			pci_unmap_single(lp->pci_dev, lp->rx_skbuff_dma_addr[entry],
+				PKT_BUF_SIZE,
+				PCI_DMA_FROMDEVICE);
+			skb_put(skb, pkt_len);
+			lp->rx_skbuff[entry] = newskb;
+			lp->rx_skbuff_dma_addr[entry] = pci_map_single(lp->pci_dev,
+				newskb->data,
+				PKT_BUF_SIZE,
+				PCI_DMA_FROMDEVICE);
+			rxp->base = cpu_to_le32(lp->rx_skbuff_dma_addr[entry]);
+			ndev->stats.rx_bytes += skb->len;
+			skb->protocol = eth_type_trans(skb, ndev);
+			netif_rx(skb);
+			dev->stats.rx_packets++;
+		}
+	}
+	return 0;
+}
 static int mypcnet32_init_ring(struct net_device *ndev)
 {
 	struct mypcnet32_private *lp = netdev_priv(ndev);
@@ -366,9 +421,12 @@ static irqreturn_t mypcnet32_interrupt(int irq, void *dev_id)
 		if (csr0 & 0x4000)
 			ndev->stats.tx_errors++;
 		if (csr0 & 0x1000) {
-			
+			ndev->stats.rx_errors++;
+		mypcnet32_rx(ndev);
+		mypcnet32_tx(ndev);
 		}
 	}
+	return IRQ_HANDLED;
 }
 static int mypcnet32_open(struct net_device *ndev)
 {
