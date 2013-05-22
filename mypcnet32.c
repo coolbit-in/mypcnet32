@@ -42,7 +42,7 @@ void __exit mypcnet32_cleanup_module(void);
 static int __devinit mypcnet32_probe(struct pci_dev *pdev, const struct pci_device_id *dev_id);
 static int mypcnet32_alloc_ring(struct net_device *ndev);
 static int mypcnet32_init_ring(struct net_device *ndev);
-static int mypcnet32_pci_driver_remove(struct net_device *ndev);
+static void mypcnet32_free_ring(struct net_device *ndev);
 static int mypcnet32_open(struct net_device *ndev);
 static int mypcnet32_start_xmit(struct sk_buff *skb, struct net_device *ndev);
 static int mypcnet32_close(struct net_device *ndev);
@@ -512,7 +512,7 @@ static void __devexit mypcnet32_pci_driver_remove(struct pci_dev *pdev)
 	if (ndev) {
 		unregister_netdev(ndev);
 		mypcnet32_free_ring(ndev);
-		release_region(ndev->base_addr, 0x20)；
+		release_region(ndev->base_addr, 0x20),
 		pci_free_consistent(lp->pci_dev, sizeof(*lp->init_block),
 			lp->init_block, lp->init_dma_addr);
 		free_netdev(ndev);
