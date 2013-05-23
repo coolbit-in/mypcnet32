@@ -513,7 +513,9 @@ static void __devexit mypcnet32_pci_driver_remove(struct pci_dev *pdev)
 	struct mypcnet32_private *lp = netdev_priv(ndev);
 	if (ndev) {
 		unregister_netdev(ndev);
+		printk("unregister_netdev is over\n");
 		mypcnet32_free_ring(ndev);
+		printk("mypcnet32_free_ring is over\n");
 		release_region(ndev->base_addr, 0x20),
 		pci_free_consistent(lp->pci_dev, sizeof(*lp->init_block),
 			lp->init_block, lp->init_dma_addr);
