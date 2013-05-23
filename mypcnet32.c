@@ -454,18 +454,18 @@ static void mypcnet32_purge_ring(struct net_device *ndev)
 		lp->rx_descriptor[i].status = 0;
 		wmb();
 		if (lp->rx_skbuff[i]) {
-			pci_unmap_single(lp->pci_dev, lp->rx_descriptor_dma_addr[i],
+			pci_unmap_single(lp->pci_dev, lp->rx_skbuff_dma_addr[i],
 				PKT_BUF_SIZE, PCI_DMA_FROMDEVICE);
 			dev_kfree_skb_any(lp->rx_skbuff[i]);
 			lp->rx_skbuff[i] = NULL;
-			lp->rx_descriptor_dma_addr[i] = 0;
+			lp->rx_skbuff_dma_addr[i] = 0;
 		}
 		if (lp->tx_skbuff[i]) {
-			pci_unmap_single(lp->pci_dev, lp->tx_descriptor_dma_addr[i],
+			pci_unmap_single(lp->pci_dev, lp->tx_skbuff_dma_addr[i],
 				PKT_BUF_SIZE, PCI_DMA_TODEVICE);
 			dev_kfree_skb_any(lp->tx_skbuff[i]);
 			lp->tx_skbuff[i] = NULL;
-			lp->tx_descriptor_dma_addr[i] = 0;
+			lp->tx_skbuff_dma_addr[i] = 0;
 		}
 	}
 }
@@ -530,6 +530,7 @@ static int mypcnet32_close(struct net_device *ndev)
 	wmb();
 	free_irq(ndev->irq, ndev); //卸载irq
 	printk("  free_irq OK\n");
+	mypcnet32_purge_ring(ndev);
 	return 0;
 }
 static void __devexit mypcnet32_pci_driver_remove(struct pci_dev *pdev)
