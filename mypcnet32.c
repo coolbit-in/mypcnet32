@@ -445,6 +445,30 @@ static int mypcnet32_init_ring(struct net_device *ndev)
 	}
 	return 0;
 }
+static void mypcnet32_purge_ring(struct net_device *ndev)
+{
+	struct mypcnet32_private *lp = netdev_priv(ndev);
+	int i;
+	for (i = 0; i < 16; i++) {	
+		lp->tx_descriptor[i].status = 0;
+		lp->rx_descriptor[i].status = 0;
+		wmb();
+		if (lp->rx_skbuff[i]) {
+			pci_unmap_single(lp->pci_dev, lp->rx_descriptor_dma_addr[i],
+				PKT_BUF_SIZE, PCI_DMA_FROMDEVICE);
+			dev_kfree_skb_any(lp->rx_skbuff[i]);
+			lp->rx_skbuff[i] = NULL;
+			lp->rx_descriptor_dma_addr[i] = 0;
+		}
+		if (lp->tx_skbuff[i]) {
+			pci_unmap_single(lp->pci_dev, lp->tx_descriptor_dma_addr[i],
+				PKT_BUF_SIZE, PCI_DMA_TODEVICE);
+			dev_kfree_skb_any(lp->tx_skbuff[i]);
+			lp->tx_skbuff[i] = NULL;
+			lp->tx_descriptor_dma_addr[i] = 0;
+		}
+	}
+}
 static irqreturn_t mypcnet32_interrupt(int irq, void *dev_id)
 {
 	struct net_device *ndev = dev_id;
@@ -503,6 +527,7 @@ static int mypcnet32_close(struct net_device *ndev)
 	netif_stop_queue(ndev); //停止队列
 	printk("  stop_queue OK\n");
 	write_csr(base_io_addr, 0, 0x0004); //置1 STOP位
+	wmb();
 	free_irq(ndev->irq, ndev); //卸载irq
 	printk("  free_irq OK\n");
 	return 0;
