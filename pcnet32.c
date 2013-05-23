@@ -310,7 +310,7 @@ static int pcnet32_init_ring(struct net_device *);
 static int pcnet32_start_xmit(struct sk_buff *, struct net_device *);
 static void pcnet32_tx_timeout(struct net_device *dev);
 static irqreturn_t pcnet32_interrupt(int, void *);
-static int pcnet32_close(struct net_device *);
+static int tpcnet32_close(struct net_device *);
 static struct net_device_stats *pcnet32_get_stats(struct net_device *);
 static void pcnet32_load_multicast(struct net_device *dev);
 static void pcnet32_set_multicast_list(struct net_device *);
@@ -1260,7 +1260,7 @@ static void pcnet32_rx_entry(struct net_device *dev,
 					    lp->rx_dma_addr[entry],
 					    pkt_len,
 					    PCI_DMA_FROMDEVICE);
-		skb_copy_to_linear_data(skb,
+		x(skb,
 				 (unsigned char *)(lp->rx_skbuff[entry]->data),
 				 pkt_len);
 		pci_dma_sync_single_for_device(lp->pci_dev,
