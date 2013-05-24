@@ -520,10 +520,10 @@ static int mypcnet32_open(struct net_device *ndev)
 		if (read_csr(base_io_addr, 0) & 0x0100) //持续检测IDON位有没有置1 
 			break;
 	printk("  Init process is down\n");
-	write_csr(base_io_addr, 0, 0x0002); //置1 STRT位
+	write_csr(base_io_addr, 0, CSR0_STRT | CSR0_IENA); //置1 STRT位
 	wmb();
 
-	printk("mypcnet32 CSR0 : %x", read_csr(base_io_addr, 0));
+	printk("mypcnet32 CSR0 : %x \n", read_csr(base_io_addr, 0));
 	//reset_chip(base_io_addr);
 	//write_bcr(base_io_addr, 20, 2); //
 	netif_start_queue(ndev);
