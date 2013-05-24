@@ -26,10 +26,10 @@
 
 /* 宏定义 */
 #define DRIVER_NAME	"mypcnet32"
-#define IO_RDP		0x10
-#define IO_RAP		0x14
-#define IO_RESET	0x18
-#define IO_BDP		0x1C
+#define IO_RDP		0x10 //默认是16bit的io
+#define IO_RAP		0x12
+#define IO_RESET	0x14
+#define IO_BDP		0x16
 #define IO_TOTAL_SIZE	0x20
 #define TX_RX_LEN (1 << 6 | 1 << 14) 
 
@@ -121,32 +121,32 @@ struct mypcnet32_private {
 	u16 tx_full;
 };
 /* 寄存器读写函数 */
-static unsigned long read_csr(unsigned long base_io_addr, int index)
+static u16 read_csr(unsigned long base_io_addr, int index)
 {
-	outl(index, base_io_addr + IO_RAP);
-	return (inl(base_io_addr + IO_RDP));
+	outw(index, base_io_addr + IO_RAP);
+	return (inw(base_io_addr + IO_RDP));
 }
 
-static void write_csr(unsigned long base_io_addr, int index, int val)
+static void write_csr(unsigned long base_io_addr, int index, u16 val)
 {
-	outl(index, base_io_addr + IO_RAP);
-	outl(val, base_io_addr + IO_RDP);
+	outw(index, base_io_addr + IO_RAP);
+	outw(val, base_io_addr + IO_RDP);
 }
 
 static unsigned long read_bcr(unsigned long base_io_addr, int index)
 {
-	outl(index, base_io_addr + IO_RAP);
-	return(inl(base_io_addr + IO_BDP));
+	outw(index, base_io_addr + IO_RAP);
+	return(inw(base_io_addr + IO_BDP));
 }
 
-static void write_bcr(unsigned long base_io_addr, int index, int val)
+static void write_bcr(unsigned long base_io_addr, int index, u16 val)
 {
-	outl(index, base_io_addr + IO_RAP);
-	outl(val, base_io_addr + IO_BDP);
+	outw(index, base_io_addr + IO_RAP);
+	outw(val, base_io_addr + IO_BDP);
 }
 static void reset_chip(unsigned long base_io_addr)
 {
-	inl(base_io_addr + IO_RESET); 
+	inw(base_io_addr + IO_RESET); 
 }
 /* 模块初始化函数 */
 static int __init mypcnet32_init_module(void)
@@ -225,7 +225,7 @@ static int __devinit mypcnet32_probe(struct pci_dev *pdev, const struct pci_devi
 	else 
 		printk("Init_block allocation failed\n");
 /* 填充INIT_BLOCK的成员 */
-	lp->init_block->mode = 0x03;
+	lp->init_block->mode = 0x00;
 	lp->init_block->tlen_rlen = TX_RX_LEN;	
 	for (i = 0; i < 6; i++) {
 		lp->init_block->mac_addr[i] = ndev->dev_addr[i];
@@ -522,8 +522,10 @@ static int mypcnet32_open(struct net_device *ndev)
 	printk("  Init process is down\n");
 	write_csr(base_io_addr, 0, CSR0_STRT | CSR0_IENA); //置1 STRT位
 	wmb();
-
-	printk("mypcnet32 CSR0 : %x \n", read_csr(base_io_addr, 0));
+	printk("----------------------------------\n");
+	printk("mypcnet32 CSR15 : %x \n");
+	printk("----------------------------------\n");
+	//printk("mypcnet32 CSR0 : %x \n", read_csr(base_io_addr, 0));
 	//reset_chip(base_io_addr);
 	//write_bcr(base_io_addr, 20, 2); //
 	netif_start_queue(ndev);
