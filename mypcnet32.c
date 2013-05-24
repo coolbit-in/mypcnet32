@@ -476,6 +476,7 @@ static irqreturn_t mypcnet32_interrupt(int irq, void *dev_id)
 	unsigned long base_io_addr = ndev->base_addr;
 	u16 csr0;
 	lp = netdev_priv(ndev);
+	printk("mypcnet32: irq_start\n");
 	csr0 = read_csr(base_io_addr, 0);
 	while(csr0 & 0x8f00) {
 		if (csr0 == 0xffff)
@@ -489,6 +490,7 @@ static irqreturn_t mypcnet32_interrupt(int irq, void *dev_id)
 		mypcnet32_tx(ndev);
 		}
 	}
+	printk("mypcnet32: irq_over\n");
 	return IRQ_HANDLED;
 }
 static int mypcnet32_open(struct net_device *ndev)
