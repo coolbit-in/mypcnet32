@@ -26,10 +26,10 @@
 
 /* 宏定义 */
 #define DRIVER_NAME	"mypcnet32"
-#define IO_RAP		0x12
 #define IO_RDP		0x10
-#define IO_BDP		0x16
-#define IO_RESET	0x14
+#define IO_RAP		0x14
+#define IO_RESET	0x18
+#define IO_BDP		0x1C
 #define IO_TOTAL_SIZE	0x20
 #define TX_RX_LEN (1 << 6 | 1 << 14) 
 
