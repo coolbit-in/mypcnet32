@@ -317,6 +317,7 @@ static int mypcnet32_start_xmit(struct sk_buff *skb, struct net_device *ndev)
 	struct mypcnet32_private *lp = netdev_priv(ndev);
 	unsigned long base_io_addr = ndev->base_addr;
 	int entry;
+	printk("Mypcnet32: start_xmit\n");
 	entry = lp->cur_tx & lp->tx_rx_len_mask;
 	lp->tx_descriptor[entry].length = cpu_to_le16(-skb->len);
 	lp->tx_descriptor[entry].misc = 0x00000000;
@@ -340,7 +341,7 @@ static int mypcnet32_tx(struct net_device *ndev)
 	int delta;
 	struct mypcnet32_private *lp = netdev_priv(ndev);
 	unsigned int dirty_tx = lp->dirty_tx;
-
+	printk("Mypcnet32: mypcnet32_tx\n");
 	while(dirty_tx != lp->cur_tx) {
 		int entry = dirty_tx & lp->tx_rx_len_mask;
 		int status = le16_to_cpu(lp->tx_descriptor[entry].status);
