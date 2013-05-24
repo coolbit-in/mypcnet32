@@ -36,6 +36,11 @@
 #define PKT_BUF_SKB 1544
 #define PKT_BUF_SIZE (PKT_BUF_SKB - NET_IP_ALIGN)
 #define NEG_BUF_SIZE (NET_IP_ALIGN - PKT_BUF_SKB)
+#define CSR0_IENA (1 << 6)
+#define CSR0_INIT 1
+#define CSR0_STRT (1 << 1)
+#define CSR0_STOP (1 << 2)
+#define CSR0_TDMD (1 << 3) 
 
 static int __init mypcnet32_init_module(void);
 void __exit mypcnet32_cleanup_module(void);
@@ -517,6 +522,8 @@ static int mypcnet32_open(struct net_device *ndev)
 	printk("  Init process is down\n");
 	write_csr(base_io_addr, 0, 0x0002); //置1 STRT位
 	wmb();
+
+	printk("mypcnet32 CSR0 : %x", read_csr(base_io_addr, 0));
 	//reset_chip(base_io_addr);
 	//write_bcr(base_io_addr, 20, 2); //
 	netif_start_queue(ndev);
