@@ -133,7 +133,7 @@ static void write_csr(unsigned long base_io_addr, int index, u16 val)
 	outw(val, base_io_addr + IO_RDP);
 }
 
-static unsigned long read_bcr(unsigned long base_io_addr, int index)
+static u16 read_bcr(unsigned long base_io_addr, int index)
 {
 	outw(index, base_io_addr + IO_RAP);
 	return(inw(base_io_addr + IO_BDP));
@@ -225,7 +225,7 @@ static int __devinit mypcnet32_probe(struct pci_dev *pdev, const struct pci_devi
 	else 
 		printk("Init_block allocation failed\n");
 /* 填充INIT_BLOCK的成员 */
-	lp->init_block->mode = 0x00;
+	lp->init_block->mode = 0x03;
 	lp->init_block->tlen_rlen = TX_RX_LEN;	
 	for (i = 0; i < 6; i++) {
 		lp->init_block->mac_addr[i] = ndev->dev_addr[i];
@@ -502,7 +502,7 @@ static irqreturn_t mypcnet32_interrupt(int irq, void *dev_id)
 static int mypcnet32_open(struct net_device *ndev)
 {
 	unsigned long base_io_addr = ndev->base_addr;
-	unsigned long val;
+	u16 val;
 	int i = 0;
 	printk("mypcnet32_open is loaded~\n");
 	if(!request_irq(ndev->irq, &mypcnet32_interrupt, 0, "mypcnet32driver", 
@@ -510,25 +510,32 @@ static int mypcnet32_open(struct net_device *ndev)
 		printk("  request_irq success\n");
 	}
 	mypcnet32_init_ring(ndev);
+	rmb();
 	val = read_bcr(base_io_addr, 2); //set autoselect bit
 	val |= 2;
 	write_bcr(base_io_addr, 2, val);
 	write_csr(base_io_addr, 4, 0x0915); // auto tx pad
-	write_csr(base_io_addr, 0, 0x0001); // 置1 INIT位
-//	netif_start_queue(ndev);
-	while (i++ < 100)
-		if (read_csr(base_io_addr, 0) & 0x0100) //持续检测IDON位有没有置1 
-			break;
-	printk("  Init process is down\n");
-	write_csr(base_io_addr, 0, CSR0_STRT | CSR0_IENA); //置1 STRT位
 	wmb();
+	rmb();
 	printk("----------------------------------\n");
-	printk("mypcnet32 CSR15 : %x \n");
+	printk("mypcnet32 CSR15 : %x \n", read_csr(base_io_addr, 15));
 	printk("----------------------------------\n");
+
+	write_csr(base_io_addr, 0, CSR0_INIT); // 置1 INIT位
+	wmb();
+//	while (i++ < 100)
+//		if (read_csr(base_io_addr, 0) & 0x0100) //持续检测IDON位有没有置1 
+//			break;
+//	printk("  Init process is down\n");
+//	write_csr(base_io_addr, 0, CSR0_STRT | CSR0_IENA); //置1 STRT位
+//	wmb();
+//	printk("----------------------------------\n");
+//	printk("mypcnet32 CSR15 : %x \n", read_csr(base_io_addr, 15));
+//	printk("----------------------------------\n");
 	//printk("mypcnet32 CSR0 : %x \n", read_csr(base_io_addr, 0));
 	//reset_chip(base_io_addr);
 	//write_bcr(base_io_addr, 20, 2); //
-	netif_start_queue(ndev);
+//	netif_start_queue(ndev);
 	return 0;
 }
 
