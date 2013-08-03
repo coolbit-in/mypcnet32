@@ -52,6 +52,7 @@ static int mypcnet32_open(struct net_device *ndev);
 static int mypcnet32_start_xmit(struct sk_buff *skb, struct net_device *ndev);
 static int mypcnet32_close(struct net_device *ndev);
 static void __devexit mypcnet32_pci_driver_remove(struct pci_dev *pdev);
+static int mypcnet32_printk_init_block(struct net_device *ndev);
 
 struct net_device *mypcnet32_net_device;
 /* pci_device_id 数据结构 */
@@ -180,6 +181,7 @@ static int __devinit mypcnet32_probe(struct pci_dev *pdev, const struct pci_devi
 		printk(KERN_INFO "request region error\n");
 	else 
 		printk(KERN_INFO "request region success\n");
+	reset_chip(base_io_addr);
 	ndev = alloc_etherdev(sizeof(*lp));
 	SET_NETDEV_DEV(ndev, &pdev->dev);
 	for (i = 0; i < 6; i++) {
@@ -225,19 +227,21 @@ static int __devinit mypcnet32_probe(struct pci_dev *pdev, const struct pci_devi
 	else 
 		printk("Init_block allocation failed\n");
 /* 填充INIT_BLOCK的成员 */
-	lp->init_block->mode = 0x03;
+	lp->init_block->mode = cpu_to_le16(0x00); //pcnet32 is 0
 	lp->init_block->tlen_rlen = TX_RX_LEN;	
 	for (i = 0; i < 6; i++) {
 		lp->init_block->mac_addr[i] = ndev->dev_addr[i];
 	}
-	lp->init_block->filter[0] = 0x00;
+	lp->init_block->filter[0] = 0x800000;
 	lp->init_block->filter[1] = 0x00;
-	lp->init_block->rx_ring_addr = lp->rx_descriptor_dma_addr;
-	lp->init_block->tx_ring_addr = lp->tx_descriptor_dma_addr; 
+	lp->init_block->rx_ring_addr = cpu_to_le32(lp->rx_descriptor_dma_addr);
+	lp->init_block->tx_ring_addr = cpu_to_le32(lp->tx_descriptor_dma_addr); 
 
 	write_bcr(base_io_addr, 20, 2); //32bit模式
 	write_csr(base_io_addr, 1, (lp->init_dma_addr & 0xffff)); //将INIT_BLOCK的物理地址写到CSR1,CSR2
 	write_csr(base_io_addr, 2, (lp->init_dma_addr >> 16));
+	mypcnet32_printk_init_block(ndev);
+	//write_csr(base_io_addr, 0, CSR0_INIT); // 置1 INIT位
 	wmb();
 	lp->pci_dev = pdev;
 	lp->tx_rx_len_mask = 15;
@@ -515,30 +519,52 @@ static int mypcnet32_open(struct net_device *ndev)
 	val |= 2;
 	write_bcr(base_io_addr, 2, val);
 	write_csr(base_io_addr, 4, 0x0915); // auto tx pad
+	//write_csr(base_io_addr, 1, 0x0915);
 	wmb();
 	rmb();
 	printk("----------------------------------\n");
+	printk("mypcnet32 CSR1 : %x \n", read_csr(base_io_addr, 1));
+	printk("mypcnet32 CSR2 : %x \n", read_csr(base_io_addr, 2));
+	printk("mypcnet32 CSR4 : %x \n", read_csr(base_io_addr, 4));
+	printk("mypcnet32 CSR0 : %x \n", read_csr(base_io_addr, 0));
 	printk("mypcnet32 CSR15 : %x \n", read_csr(base_io_addr, 15));
+	printk("mypcnet32 BCR2 : %x \n", read_bcr(base_io_addr, 2));
+	printk("mypcnet32 BCR20 : %x \n", read_bcr(base_io_addr, 20));
 	printk("----------------------------------\n");
-
-	write_csr(base_io_addr, 0, CSR0_INIT); // 置1 INIT位
+	mypcnet32_printk_init_block(ndev);
+//	write_csr(base_io_addr, 0, CSR0_INIT); // 置1 INIT位
+	
+	while (i++ < 100)
+		if (read_csr(base_io_addr, 0) & 0x0100) //持续检测IDON位有没有置1 
+			break;
+	printk("  Init process is down\n");
+	write_csr(base_io_addr, 0, CSR0_STRT | CSR0_IENA); //置1 STRT位
 	wmb();
-//	while (i++ < 100)
-//		if (read_csr(base_io_addr, 0) & 0x0100) //持续检测IDON位有没有置1 
-//			break;
-//	printk("  Init process is down\n");
-//	write_csr(base_io_addr, 0, CSR0_STRT | CSR0_IENA); //置1 STRT位
-//	wmb();
 //	printk("----------------------------------\n");
 //	printk("mypcnet32 CSR15 : %x \n", read_csr(base_io_addr, 15));
 //	printk("----------------------------------\n");
 	//printk("mypcnet32 CSR0 : %x \n", read_csr(base_io_addr, 0));
 	//reset_chip(base_io_addr);
 	//write_bcr(base_io_addr, 20, 2); //
-//	netif_start_queue(ndev);
+	netif_start_queue(ndev);
+
 	return 0;
 }
-
+static int mypcnet32_printk_init_block(struct net_device *ndev)
+{
+	struct mypcnet32_private *lp = netdev_priv(ndev);
+	printk("====================================\n");
+	printk("mypcnet32 init_block_mode: %x\n", lp->init_block->mode);
+	printk("mypcnet32 init_block_tlen_rlen: %x\n", lp->init_block->tlen_rlen);
+	printk("mypcnet32 init_block_filter[0]: %x\n", lp->init_block->filter[0]);
+	printk("mypcnet32 init_block_filter[1]: %x\n", lp->init_block->filter[1]);
+	printk("mypcnet32 init_block_rx_ring_addr: %x\n", lp->init_block->rx_ring_addr);
+	printk("mypcnet32 init_block_tx_ring_addr: %x\n", lp->init_block->tx_ring_addr);
+	printk("mypcnet32 init_block DMA addr: %x\n", lp->init_dma_addr);
+	printk("====================================\n");
+	return 0;
+	
+}
 static int mypcnet32_close(struct net_device *ndev) 
 {
 	unsigned long base_io_addr = ndev->base_addr;
