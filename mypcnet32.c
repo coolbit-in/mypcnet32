@@ -207,20 +207,20 @@ static int __devinit mypcnet32_probe(struct pci_dev *pdev, const struct pci_devi
 	//printk("csr14 %lx ", read_csr(base_io_addr, 14));	
 	//printk("\n");
 	/************************/
-	printk(KERN_INFO "MAC ADDRESS: "); //输出mac地址以供检查
+	printk(KERN_INFO "MAC ADDRESS:"); //输出mac地址以供检查
 	for (i = 0; i < 6; i++) {
-		printk(KERN_INFO "%x:", ndev->dev_addr[i]);
+		printk(KERN_INFO "%d ", ndev->dev_addr[i]);
 	}
 	printk(KERN_INFO "\n");
 
 	ndev->base_addr = base_io_addr; //填充ndev的base_addr
 	ndev->irq = pdev->irq; //填充ndev的irq
 	printk(" addigned IRQ %d\n", ndev->irq);
-
-	mypcnet32_alloc_ring(ndev); //分配描述符空间
 	
 	lp = netdev_priv(ndev);  //获取私有空间
 
+	lp->pci_dev = pdev;
+	mypcnet32_alloc_ring(ndev); //分配描述符空间
 	lp->init_block = pci_alloc_consistent(pdev, sizeof(*lp->init_block), &lp->init_dma_addr); //分配Init_block在内存中的空间
 	if (lp->init_block != NULL) 
 		printk("Init_block allocation success\n");
@@ -243,7 +243,6 @@ static int __devinit mypcnet32_probe(struct pci_dev *pdev, const struct pci_devi
 	mypcnet32_printk_init_block(ndev);
 	//write_csr(base_io_addr, 0, CSR0_INIT); // 置1 INIT位
 	wmb();
-	lp->pci_dev = pdev;
 	lp->tx_rx_len_mask = 15;
 	//lp->tx_ring_size = 16;
 	//lp->rx_ring_size = 16;
@@ -533,7 +532,7 @@ static int mypcnet32_open(struct net_device *ndev)
 	printk("----------------------------------\n");
 	mypcnet32_printk_init_block(ndev);
 //	write_csr(base_io_addr, 0, CSR0_INIT); // 置1 INIT位
-	
+/*	
 	while (i++ < 100)
 		if (read_csr(base_io_addr, 0) & 0x0100) //持续检测IDON位有没有置1 
 			break;
@@ -547,7 +546,7 @@ static int mypcnet32_open(struct net_device *ndev)
 	//reset_chip(base_io_addr);
 	//write_bcr(base_io_addr, 20, 2); //
 	netif_start_queue(ndev);
-
+*/
 	return 0;
 }
 static int mypcnet32_printk_init_block(struct net_device *ndev)
