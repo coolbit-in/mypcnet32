@@ -310,7 +310,7 @@ static int pcnet32_init_ring(struct net_device *);
 static int pcnet32_start_xmit(struct sk_buff *, struct net_device *);
 static void pcnet32_tx_timeout(struct net_device *dev);
 static irqreturn_t pcnet32_interrupt(int, void *);
-static int tpcnet32_close(struct net_device *);
+static int pcnet32_close(struct net_device *);
 static struct net_device_stats *pcnet32_get_stats(struct net_device *);
 static void pcnet32_load_multicast(struct net_device *dev);
 static void pcnet32_set_multicast_list(struct net_device *);
@@ -1260,7 +1260,7 @@ static void pcnet32_rx_entry(struct net_device *dev,
 					    lp->rx_dma_addr[entry],
 					    pkt_len,
 					    PCI_DMA_FROMDEVICE);
-		x(skb,
+		skb_copy_to_linear_data(skb,
 				 (unsigned char *)(lp->rx_skbuff[entry]->data),
 				 pkt_len);
 		pci_dma_sync_single_for_device(lp->pci_dev,
@@ -1623,11 +1623,17 @@ pcnet32_probe1(unsigned long ioaddr, int shared, struct pci_dev *pdev)
 	/* NOTE: 16-bit check is first, otherwise some older PCnet chips fail */
 	if (pcnet32_wio_read_csr(ioaddr, 0) == 4 && pcnet32_wio_check(ioaddr)) {
 		a = &pcnet32_wio;
+		printk("------------------------------------\n");
+		printk("pcnet32 : 16 bit io\n");
+		printk("------------------------------------\n");
 	} else {
 		pcnet32_dwio_reset(ioaddr);
 		if (pcnet32_dwio_read_csr(ioaddr, 0) == 4
 		    && pcnet32_dwio_check(ioaddr)) {
 			a = &pcnet32_dwio;
+			printk("------------------------------------\n");
+			printk("pcnet32 : 32 bit io\n");
+			printk("------------------------------------\n");
 		} else
 			goto err_release_region;
 	}
@@ -1660,6 +1666,9 @@ pcnet32_probe1(unsigned long ioaddr, int shared, struct pci_dev *pdev)
 	case 0x2621:
 		chipname = "PCnet/PCI II 79C970A";	/* PCI */
 		fdx = 1;
+		printk("=========\n");
+		printk("Pcnet/PCI II 79c970A\n");
+		printk("=========\n");
 		break;
 	case 0x2623:
 		chipname = "PCnet/FAST 79C971";	/* PCI */
@@ -2115,7 +2124,43 @@ static void pcnet32_free_ring(struct net_device *dev)
 		lp->rx_ring = NULL;
 	}
 }
-
+static int pcnet32_printk_init_block(struct net_device *dev)
+{
+	struct pcnet32_private *lp = netdev_priv(dev);
+	unsigned long ioaddr = dev->base_addr;
+	int i;
+	printk("=================================\n");
+	printk("pcnet32:init_block_mode : %x\n", lp->init_block->mode);
+	printk("pcnet32:init_block_tlen_rlen : %x\n", lp->init_block->tlen_rlen);
+	printk("pcnet32:init_block_filter[0] : %x\n", lp->init_block->filter[0]);
+	printk("pcnet32:init_block_filter[1] : %x\n", lp->init_block->filter[1]);
+	printk("pcnet32:init_block_rx_ring : %x\n", lp->init_block->rx_ring);
+	printk("pcnet32:init_block_tx_ring : %x\n", lp->init_block->tx_ring);
+	printk("pcnet32:init_block DMA addr : %x\n", lp->init_dma_addr);
+	for (i = 0; i < 6; i++)
+		printk("pcnet32:init_block_mac_addr[%d]: %x\n",i ,lp->init_block->phys_addr[i]);
+	printk("=================================\n");
+	printk("\n");
+    printk("========================================================\n");
+    for (i = 1; i <= 5; i++) 
+        printk("mypcnet32 : CSR%d : %x \n", i, lp->a.read_csr(ioaddr, i));
+    i = 47;
+    printk("pcnet32 : CSR%d : %x \n", i, lp->a.read_csr(ioaddr, i));
+    i = 82;
+    printk("pcnet32 : CSR%d : %x \n", i, lp->a.read_csr(ioaddr, i));
+    i = 100;
+    printk("pcnet32 : CSR%d : %x \n", i, lp->a.read_csr(ioaddr, i));
+    i = 122;
+    printk("pcnet32 : CSR%d : %x \n", i, lp->a.read_csr(ioaddr, i));
+    i = 9;
+    printk("pcnet32 : BCR%d : %x \n", i, lp->a.read_bcr(ioaddr, i));
+    i = 18;
+    printk("pcnet32 : BCR%d : %x \n", i, lp->a.read_bcr(ioaddr, i));
+    printk("========================================================\n");
+    printk("\n");
+	return 0;
+	
+}
 static int pcnet32_open(struct net_device *dev)
 {
 	struct pcnet32_private *lp = netdev_priv(dev);
@@ -2153,8 +2198,12 @@ static int pcnet32_open(struct net_device *dev)
 
 	/* set/reset autoselect bit */
 	val = lp->a.read_bcr(ioaddr, 2) & ~2;
-	if (lp->options & PCNET32_PORT_ASEL)
+	if (lp->options & PCNET32_PORT_ASEL) {
 		val |= 2;
+		printk("--------------------\n");
+		printk("bcr 2 : %d\n",val);
+		printk("--------------------\n");
+	}
 	lp->a.write_bcr(ioaddr, 2, val);
 
 	/* handle full duplex setting */
@@ -2306,8 +2355,22 @@ static int pcnet32_open(struct net_device *dev)
 	lp->a.write_csr(ioaddr, 2, (lp->init_dma_addr >> 16));
 
 	lp->a.write_csr(ioaddr, CSR4, 0x0915);	/* auto tx pad */
+	wmb();
+	rmb();
+	printk("pcnet32 : CSR0 : %x  \n",lp->a.read_csr(ioaddr, 0));
+	printk("pcnet32 : CSR1 : %x  \n",lp->a.read_csr(ioaddr, 1));
+	printk("pcnet32 : CSR2 : %x  \n",lp->a.read_csr(ioaddr, 2));
+	printk("pcnet32 : CSR4 : %x  \n",lp->a.read_csr(ioaddr, 4));
+	printk("pcnet32 : BCR2 : %x  \n",lp->a.read_bcr(ioaddr, 2));
+	printk("pcnet32 : BCR20 : %x  \n",lp->a.read_bcr(ioaddr, 20));
+	pcnet32_printk_init_block(dev);
 	lp->a.write_csr(ioaddr, CSR0, CSR0_INIT);
-
+	/*debug*/
+	wmb();
+	rmb();
+	printk("pcnet32 : CSR0 : %x  \n",lp->a.read_csr(ioaddr, 0));
+	printk("pcnet32 : CSR15 : %x  \n",lp->a.read_csr(ioaddr, 15));
+	
 	netif_start_queue(dev);
 
 	if (lp->chip_version >= PCNET32_79C970A) {
@@ -2325,14 +2388,17 @@ static int pcnet32_open(struct net_device *dev)
 	 * reports that doing so triggers a bug in the '974.
 	 */
 	lp->a.write_csr(ioaddr, CSR0, CSR0_NORMAL);
-
-	if (netif_msg_ifup(lp))
-		printk(KERN_DEBUG
+	pcnet32_printk_init_block(dev);
+	//if (netif_msg_ifup(lp))
+		printk(//KERN_DEBUG
 		       "%s: pcnet32 open after %d ticks, init block %#x csr0 %4.4x.\n",
 		       dev->name, i,
 		       (u32) (lp->init_dma_addr),
 		       lp->a.read_csr(ioaddr, CSR0));
-
+	/*debug*/
+	printk("--------------------------------------\n");
+	printk("Pcnet32 COOLBIT CSR15: %4.4x", lp->a.read_csr(ioaddr, 15));
+	printk("--------------------------------------\n");
 	spin_unlock_irqrestore(&lp->lock, flags);
 
 	return 0;		/* Always succeed */
@@ -2666,7 +2732,8 @@ static int pcnet32_close(struct net_device *dev)
 	unsigned long ioaddr = dev->base_addr;
 	struct pcnet32_private *lp = netdev_priv(dev);
 	unsigned long flags;
-
+	/*debug*/
+	printk("coolbit:pcnet23_close\n");
 	del_timer_sync(&lp->watchdog_timer);
 
 	netif_stop_queue(dev);
@@ -2999,11 +3066,14 @@ static int pcnet32_pm_resume(struct pci_dev *pdev)
 static void __devexit pcnet32_remove_one(struct pci_dev *pdev)
 {
 	struct net_device *dev = pci_get_drvdata(pdev);
-
+	/*debug*/
+	printk("coolbit:pcnet32_remove_one\n");
 	if (dev) {
 		struct pcnet32_private *lp = netdev_priv(dev);
 
 		unregister_netdev(dev);
+		/*debug*/
+		printk("  coolbit:unregister_netdev\n");
 		pcnet32_free_ring(dev);
 		release_region(dev->base_addr, PCNET32_TOTAL_SIZE);
 		pci_free_consistent(lp->pci_dev, sizeof(*lp->init_block), 
@@ -3084,6 +3154,7 @@ static void __exit pcnet32_cleanup_module(void)
 	struct net_device *next_dev;
 
 	while (pcnet32_dev) {
+		printk("not pci\n");
 		struct pcnet32_private *lp = netdev_priv(pcnet32_dev);
 		next_dev = lp->next;
 		unregister_netdev(pcnet32_dev);
@@ -3095,8 +3166,10 @@ static void __exit pcnet32_cleanup_module(void)
 		pcnet32_dev = next_dev;
 	}
 
-	if (pcnet32_have_pci)
+	if (pcnet32_have_pci) {
+		printk("is pci\n");
 		pci_unregister_driver(&pcnet32_driver);
+	}
 }
 
 module_init(pcnet32_init_module);

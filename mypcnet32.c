@@ -240,7 +240,7 @@ static int __devinit mypcnet32_probe(struct pci_dev *pdev, const struct pci_devi
 	write_bcr(base_io_addr, 20, 2); //32bit模式
 	write_csr(base_io_addr, 1, (lp->init_dma_addr & 0xffff)); //将INIT_BLOCK的物理地址写到CSR1,CSR2
 	write_csr(base_io_addr, 2, (lp->init_dma_addr >> 16));
-	mypcnet32_printk_init_block(ndev);
+	//mypcnet32_printk_init_block(ndev);
 	//write_csr(base_io_addr, 0, CSR0_INIT); // 置1 INIT位
 	wmb();
 	lp->tx_rx_len_mask = 15;
@@ -551,7 +551,9 @@ static int mypcnet32_open(struct net_device *ndev)
 }
 static int mypcnet32_printk_init_block(struct net_device *ndev)
 {
+	int i;
 	struct mypcnet32_private *lp = netdev_priv(ndev);
+	unsigned long base_io_addr = ndev->base_addr;	
 	printk("====================================\n");
 	printk("mypcnet32 init_block_mode: %x\n", lp->init_block->mode);
 	printk("mypcnet32 init_block_tlen_rlen: %x\n", lp->init_block->tlen_rlen);
@@ -560,7 +562,27 @@ static int mypcnet32_printk_init_block(struct net_device *ndev)
 	printk("mypcnet32 init_block_rx_ring_addr: %x\n", lp->init_block->rx_ring_addr);
 	printk("mypcnet32 init_block_tx_ring_addr: %x\n", lp->init_block->tx_ring_addr);
 	printk("mypcnet32 init_block DMA addr: %x\n", lp->init_dma_addr);
+	for (i = 0; i < 6; i++)
+		printk("mypcnet32 init_block_mac_addr[%d]: %x\n", i, lp->init_block->mac_addr[i]);
 	printk("====================================\n");
+	printk("\n");
+	printk("========================================================\n");
+	for (i = 1; i <= 5; i++) 
+		printk("mypcnet32 : CSR%d : %x \n", i, read_csr(base_io_addr, i));
+	i = 47;
+	printk("mypcnet32 : CSR%d : %x \n", i, read_csr(base_io_addr, i));
+	i = 82;
+	printk("mypcnet32 : CSR%d : %x \n", i, read_csr(base_io_addr, i));
+	i = 100;
+	printk("mypcnet32 : CSR%d : %x \n", i, read_csr(base_io_addr, i));
+	i = 122;
+	printk("mypcnet32 : CSR%d : %x \n", i, read_csr(base_io_addr, i));
+	i = 9;
+	printk("mypcnet32 : BCR%d : %x \n", i, read_bcr(base_io_addr, i));
+	i = 18;
+	printk("mypcnet32 : BCR%d : %x \n", i, read_bcr(base_io_addr, i));
+	printk("========================================================\n");
+	printk("\n");
 	return 0;
 	
 }
