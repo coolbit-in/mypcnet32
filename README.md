@@ -1,6 +1,6 @@
 #mypcnet32 driver
 ##说明  
-`mypcnet32.c`是我自己写的驱动程序
+`mypcnet32.c`是我自己写的驱动程序  
 `pcnet32.c`是原版的驱动程序里面做了一些修改是我用于debug的prink信息  
 具体硬件是`Am79C970A PCnet-PCI II`
 ##崩溃情况
